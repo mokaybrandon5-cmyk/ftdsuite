@@ -171,7 +171,7 @@ const DOC_LABELS = {
   medicalCard:"Medical Card", drugTest:"Drug Test", eldt:"ELDT/LTC"
 };
 
-const PRETRIP_CATS = [
+const DEFAULT_PRETRIP_CATS = [
   {id:"safeStart",     label:"Safe Start",       weight:15},
   {id:"brakesAir",     label:"Brakes / Air",     weight:15},
   {id:"inCab",         label:"In-Cab",            weight:5 },
@@ -183,12 +183,31 @@ const PRETRIP_CATS = [
   {id:"trailer",       label:"Trailer",          weight:5 },
 ];
 
-const MANEUVER_CATS = [
+const DEFAULT_MANEUVER_CATS = [
   {id:"maneuver1",label:"Straight Line Backing",   weight:20},
   {id:"maneuver2",label:"Offset Backing",          weight:30},
   {id:"maneuver3",label:"Parallel Park (Conv.)",   weight:25},
   {id:"maneuver4",label:"Alley Dock / 90° Backing",weight:25},
 ];
+
+// ─── PESOS CONFIGURABLES ──────────────────────────────────────────────────────
+// Editables desde Configuracion. Persisten en este navegador (localStorage).
+// Sincronizacion con Supabase (multi-dispositivo / multi-escuela): Bloque 4.
+let PRETRIP_CATS  = DEFAULT_PRETRIP_CATS.map(c=>({...c}));
+let MANEUVER_CATS = DEFAULT_MANEUVER_CATS.map(c=>({...c}));
+try {
+  const _savedRubrics = JSON.parse(localStorage.getItem("tds_rubrics") || "null");
+  if (_savedRubrics) {
+    if (Array.isArray(_savedRubrics.pretrip)   && _savedRubrics.pretrip.length)   PRETRIP_CATS  = _savedRubrics.pretrip;
+    if (Array.isArray(_savedRubrics.maneuvers) && _savedRubrics.maneuvers.length) MANEUVER_CATS = _savedRubrics.maneuvers;
+  }
+} catch (_e) {}
+
+function saveRubrics(pretrip, maneuvers) {
+  PRETRIP_CATS  = pretrip;
+  MANEUVER_CATS = maneuvers;
+  try { localStorage.setItem("tds_rubrics", JSON.stringify({pretrip, maneuvers})); } catch (_e) {}
+}
 
 const WA_TMPL = {
   payment_reminder: (s,bal) =>
@@ -1188,7 +1207,7 @@ export default function App() {
         {view==="calendar"     && <CalendarPage students={students} openStudent={openStudent}/>}
         {view==="reports"      && perms.canReports && <ReportsPage students={students}/>}
         {view==="ai"           && <AIPage students={students}/>}
-        {view==="settings" && <SettingsPage/>}
+        {view==="settings"     && <SettingsPage/>}
         {view==="users"        && perms.canUsers && <UsersPage sysUsers={sysUsers} currentUser={user} onCreateUser={u=>{setSysUsers(p=>[...p,{...u,id:Date.now(),createdAt:today,lastLogin:null,active:true}]);addNotif(t("users"),`${u.name} agregado.`,"success");}} onUpdateUser={u=>setSysUsers(p=>p.map(x=>x.id===u.id?u:x))} onDeleteUser={id=>setSysUsers(p=>p.filter(u=>u.id!==id))} notifs={notifs}/>}
         {view==="notifications"&& <NotifsPage notifs={notifs} markRead={markNotifsRead}/>}
       </main>
@@ -1500,20 +1519,105 @@ function LoginPage({users,onLogin,dark,setDark,lang,setLang}) {
 // ─── KANBAN ───────────────────────────────────────────────────────────────────
 function SettingsPage(){
   const {dark,lang} = useApp();
-  return (
-    <div style={{padding:"32px 40px",maxWidth:900}}>
-      <h1 style={{fontSize:26,fontWeight:900,letterSpacing:"-.02em",color:dark?"#fff":"#0f2544",marginBottom:6}}>
-        {lang==="es"?"Configuración":"Settings"}
-      </h1>
-      <p style={{color:dark?"rgba(255,255,255,.5)":"#64748b",fontSize:14,marginBottom:24}}>
-        {lang==="es"?"Pesos de evaluación, sedes y perfil de la escuela.":"Evaluation weights, locations and school profile."}
-      </p>
-      <div style={{padding:"40px",borderRadius:16,border:`1px dashed ${dark?"rgba(255,255,255,.15)":"#cbd5e1"}`,textAlign:"center",color:dark?"rgba(255,255,255,.4)":"#94a3b8",fontSize:14,fontWeight:700}}>
-        {lang==="es"?"🚧 En construcción — Paso 1 completado.":"🚧 Under construction — Step 1 done."}
+  const L = lang==="es";
+  const [pt, setPt]   = useState(()=>PRETRIP_CATS.map(c=>({...c})));
+  const [man, setMan] = useState(()=>MANEUVER_CATS.map(c=>({...c})));
+  const [flash, setFlash] = useState("");
+
+  const ptTotal  = pt.reduce((a,c)=>a+(Number(c.weight)||0),0);
+  const manTotal = man.reduce((a,c)=>a+(Number(c.weight)||0),0);
+  const ptOk  = ptTotal===100;
+  const manOk = manTotal===100;
+  const canSave = ptOk && manOk;
+
+  const setWeight=(which,i,val)=>{
+    const n=Math.max(0,Math.min(100,Math.round(Number(val)||0)));
+    if(which==="pt"){ const cp=pt.map(c=>({...c})); cp[i].weight=n; setPt(cp); }
+    else            { const cp=man.map(c=>({...c})); cp[i].weight=n; setMan(cp); }
+    setFlash("");
+  };
+
+  const onSave=()=>{
+    if(!canSave) return;
+    saveRubrics(pt.map(c=>({...c})), man.map(c=>({...c})));
+    setFlash(L?"✓ Pesos guardados. Las nuevas evaluaciones los usarán.":"✓ Weights saved. New evaluations will use them.");
+  };
+
+  const onReset=()=>{
+    setPt(DEFAULT_PRETRIP_CATS.map(c=>({...c})));
+    setMan(DEFAULT_MANEUVER_CATS.map(c=>({...c})));
+    setFlash(L?"Valores de fábrica restaurados (aún no guardados).":"Factory values restored (not saved yet).");
+  };
+
+  const txt     = dark?"#fff":"#0f2544";
+  const muted   = dark?"rgba(255,255,255,.5)":"#64748b";
+  const card    = dark?"rgba(255,255,255,.03)":"#ffffff";
+  const bord    = dark?"rgba(255,255,255,.1)":"#e2e8f0";
+  const inputBg = dark?"rgba(255,255,255,.06)":"#f8fafc";
+
+  const renderSection=(title,color,cats,which,total,ok)=>(
+    <div style={{background:card,border:`1px solid ${bord}`,borderRadius:16,padding:"20px 22px",marginBottom:18}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+        <div style={{display:"flex",alignItems:"center",gap:9}}>
+          <span style={{width:10,height:10,borderRadius:3,background:color,display:"inline-block"}}/>
+          <span style={{fontSize:15,fontWeight:800,color:txt}}>{title}</span>
+        </div>
+        <div style={{fontSize:13,fontWeight:800,padding:"4px 12px",borderRadius:20,
+          background:ok?(dark?"rgba(34,197,94,.15)":"#dcfce7"):(dark?"rgba(239,68,68,.15)":"#fee2e2"),
+          color:ok?"#16a34a":"#dc2626"}}>
+          {L?"Suma":"Total"}: {total}% {ok?"✓":(L?"· debe ser 100%":"· must be 100%")}
+        </div>
       </div>
+      {cats.map((c,i)=>(
+        <div key={c.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"9px 0",borderTop:i?`1px solid ${bord}`:"none"}}>
+          <span style={{fontSize:14,color:txt}}>{c.label}</span>
+          <div style={{display:"flex",alignItems:"center",gap:6}}>
+            <input type="number" min="0" max="100" value={c.weight}
+              onChange={e=>setWeight(which,i,e.target.value)}
+              style={{width:66,padding:"7px 10px",borderRadius:9,border:`1px solid ${bord}`,
+                background:inputBg,color:txt,fontSize:14,fontWeight:700,textAlign:"right",outline:"none"}}/>
+            <span style={{fontSize:14,color:muted,fontWeight:700}}>%</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+
+  return (
+    <div style={{padding:"32px 40px",maxWidth:760}}>
+      <h1 style={{fontSize:26,fontWeight:900,letterSpacing:"-.02em",color:txt,marginBottom:6}}>
+        {L?"Configuración":"Settings"}
+      </h1>
+      <p style={{color:muted,fontSize:14,marginBottom:24}}>
+        {L?"Pesos de evaluación configurables. Cada sección debe sumar 100%.":"Configurable evaluation weights. Each section must total 100%."}
+      </p>
+
+      {renderSection(L?"Inspección Pre-Trip":"Pre-Trip Inspection","#2563eb",pt,"pt",ptTotal,ptOk)}
+      {renderSection(L?"Maniobras / Backing":"Maneuvers / Backing","#7c3aed",man,"man",manTotal,manOk)}
+
+      <div style={{display:"flex",alignItems:"center",gap:12,marginTop:8,flexWrap:"wrap"}}>
+        <button onClick={onSave} disabled={!canSave}
+          style={{padding:"11px 22px",borderRadius:11,border:"none",fontSize:14,fontWeight:800,
+            cursor:canSave?"pointer":"not-allowed",opacity:canSave?1:.5,background:"#2563eb",color:"#fff"}}>
+          {L?"Guardar pesos":"Save weights"}
+        </button>
+        <button onClick={onReset}
+          style={{padding:"11px 18px",borderRadius:11,border:`1px solid ${bord}`,fontSize:14,fontWeight:700,
+            cursor:"pointer",background:"transparent",color:txt}}>
+          {L?"Restaurar de fábrica":"Reset to default"}
+        </button>
+        {flash && <span style={{fontSize:13,fontWeight:700,color:flash.charAt(0)==="✓"?"#16a34a":muted}}>{flash}</span>}
+      </div>
+
+      {!canSave && (
+        <p style={{marginTop:14,fontSize:13,color:"#dc2626",fontWeight:600}}>
+          {L?"Ajusta los pesos para que cada sección sume exactamente 100% antes de guardar.":"Adjust weights so each section totals exactly 100% before saving."}
+        </p>
+      )}
     </div>
   );
 }
+
 function KanbanPage({students,openStudent,updateStudent}) {
   const {dark,lang,t} = useApp();
   const COLS=Object.entries(STATUS_META).sort((a,b)=>a[1].order-b[1].order).map(([k,v])=>({key:k,...v}));
