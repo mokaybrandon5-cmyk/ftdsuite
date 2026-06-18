@@ -1046,6 +1046,7 @@ export default function App() {
     {id:"reports",label:t("reports"),icon:"chart",perm:"canReports"},
     {id:"ai",label:t("ai"),icon:"bot",always:true},
     {id:"users",label:t("users"),icon:"userplus",perm:"canUsers"},
+    {id:"settings",label:lang==="es"?"Configuración":"Settings",icon:"settings",always:true},
   ].filter(n=>n.always||perms[n.perm]);
 
 
@@ -1187,6 +1188,7 @@ export default function App() {
         {view==="calendar"     && <CalendarPage students={students} openStudent={openStudent}/>}
         {view==="reports"      && perms.canReports && <ReportsPage students={students}/>}
         {view==="ai"           && <AIPage students={students}/>}
+        {view==="settings" && <SettingsPage/>}
         {view==="users"        && perms.canUsers && <UsersPage sysUsers={sysUsers} currentUser={user} onCreateUser={u=>{setSysUsers(p=>[...p,{...u,id:Date.now(),createdAt:today,lastLogin:null,active:true}]);addNotif(t("users"),`${u.name} agregado.`,"success");}} onUpdateUser={u=>setSysUsers(p=>p.map(x=>x.id===u.id?u:x))} onDeleteUser={id=>setSysUsers(p=>p.filter(u=>u.id!==id))} notifs={notifs}/>}
         {view==="notifications"&& <NotifsPage notifs={notifs} markRead={markNotifsRead}/>}
       </main>
@@ -1496,6 +1498,22 @@ function LoginPage({users,onLogin,dark,setDark,lang,setLang}) {
 
 
 // ─── KANBAN ───────────────────────────────────────────────────────────────────
+function SettingsPage(){
+  const {dark,lang} = useApp();
+  return (
+    <div style={{padding:"32px 40px",maxWidth:900}}>
+      <h1 style={{fontSize:26,fontWeight:900,letterSpacing:"-.02em",color:dark?"#fff":"#0f2544",marginBottom:6}}>
+        {lang==="es"?"Configuración":"Settings"}
+      </h1>
+      <p style={{color:dark?"rgba(255,255,255,.5)":"#64748b",fontSize:14,marginBottom:24}}>
+        {lang==="es"?"Pesos de evaluación, sedes y perfil de la escuela.":"Evaluation weights, locations and school profile."}
+      </p>
+      <div style={{padding:"40px",borderRadius:16,border:`1px dashed ${dark?"rgba(255,255,255,.15)":"#cbd5e1"}`,textAlign:"center",color:dark?"rgba(255,255,255,.4)":"#94a3b8",fontSize:14,fontWeight:700}}>
+        {lang==="es"?"🚧 En construcción — Paso 1 completado.":"🚧 Under construction — Step 1 done."}
+      </div>
+    </div>
+  );
+}
 function KanbanPage({students,openStudent,updateStudent}) {
   const {dark,lang,t} = useApp();
   const COLS=Object.entries(STATUS_META).sort((a,b)=>a[1].order-b[1].order).map(([k,v])=>({key:k,...v}));
