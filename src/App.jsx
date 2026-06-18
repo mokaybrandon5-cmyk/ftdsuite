@@ -1,4 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo, createContext, useContext } from "react";
+import { supabase, SCHOOL_ID } from "./supabaseClient";
 
 // ╔══════════════════════════════════════════════════════════════════════════════╗
 // ║          TDSuite v4.0 — Felipe's Truck Driving School                      ║
@@ -838,6 +839,7 @@ export default function App() {
   const [tick,    setTick]    = useState(0);
   const [autoRef, setAutoRef] = useState(false);
   const [lastRef, setLastRef] = useState(null);
+  const sbLoadedRef = useRef(false);
 
   // Auto-refresh cada 1.2 segundos
   useEffect(()=>{
@@ -859,8 +861,61 @@ export default function App() {
   useEffect(()=>LS.set("tds_lang",lang),[lang]);
   useEffect(()=>LS.set("tds_users",sysUsers),[sysUsers]);
   useEffect(()=>LS.set("tds_students",students),[students]);
+  // SUPABASE: guardar estudiantes en la nube (ademas del local)
+  useEffect(()=>{
+    if(!sbLoadedRef.current) return; // no guardar durante la carga inicial
+    const t=setTimeout(async ()=>{
+      try{
+        const filas=students.map(s=>({
+          id: s.id ? String(s.id) : String(Date.now()+Math.random()),
+          school_id: SCHOOL_ID,
+          data: s
+        }));
+        if(filas.length===0) return;
+        const { error } = await supabase.from("students").upsert(filas, { onConflict: "id" });
+        if(error){ console.warn("Supabase guardado:", error.message); }
+      }catch(e){ console.warn("Supabase guardado (exc):", e?.message||e); }
+    }, 1500);
+    return ()=>clearTimeout(t);
+  },[students]);
   useEffect(()=>LS.set("tds_notifs",notifs),[notifs]);
   useEffect(()=>{ if(user) LS.set("tds_session",user); else LS.del("tds_session"); },[user]);
+
+  // ====== SUPABASE: login automatico + carga inicial desde la nube ======
+  useEffect(()=>{
+    let cancelado=false;
+    async function arrancarNube(){
+      try{
+        const { data: sesion } = await supabase.auth.getSession();
+        if(!sesion?.session){
+          const email=process.env.REACT_APP_SB_EMAIL;
+          const password=process.env.REACT_APP_SB_PASSWORD;
+          if(email&&password){
+            const { error: errLogin } = await supabase.auth.signInWithPassword({ email, password });
+            if(errLogin){ console.warn("Supabase login:", errLogin.message); }
+          }
+        }
+        const { data, error } = await supabase
+          .from("students")
+          .select("data")
+          .eq("school_id", SCHOOL_ID);
+        if(cancelado) return;
+        if(error){
+          console.warn("Supabase carga:", error.message);
+        } else if(data && data.length>0){
+          const lista=data.map(f=>f.data).filter(Boolean);
+          if(lista.length>0){ setStudents(lista); }
+        }
+      }catch(e){
+        console.warn("Supabase arranque:", e?.message||e);
+      }finally{
+        if(!cancelado){ sbLoadedRef.current=true; }
+      }
+    }
+    arrancarNube();
+    return ()=>{ cancelado=true; };
+  },[]);
+  // ======================================================================
 
   // Cmd+K global search
   useEffect(()=>{
