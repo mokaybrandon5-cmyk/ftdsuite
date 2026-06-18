@@ -867,12 +867,12 @@ export default function App() {
     const t=setTimeout(async ()=>{
       try{
         const filas=students.map(s=>({
-          id: s.id ? String(s.id) : String(Date.now()+Math.random()),
+          student_key: s.id ? String(s.id) : String(Date.now()+Math.random()),
           school_id: SCHOOL_ID,
           data: s
         }));
         if(filas.length===0) return;
-        const { error } = await supabase.from("students").upsert(filas, { onConflict: "id" });
+        const { error } = await supabase.from("students").upsert(filas, { onConflict: "student_key" });
         if(error){ console.warn("Supabase guardado:", error.message); }
       }catch(e){ console.warn("Supabase guardado (exc):", e?.message||e); }
     }, 1500);
